@@ -4,7 +4,7 @@
 ///
 /// We use a u32 as an index, representing the ith input of that player to the circuit.
 #[derive(Clone, Copy, Debug)]
-enum Input {
+pub enum Input {
     /// An indexed input from player A.
     A(u32),
     /// An indexed input from player B.
@@ -16,7 +16,7 @@ enum Input {
 /// Strictly speaking, this can only be the not gate, or a useless identity gate.
 /// Omitting the identity gate makes sense, because that would add needless complexity.
 #[derive(Clone, Copy, Debug)]
-enum Gate1 {
+pub enum Gate1 {
     Not,
 }
 
@@ -24,7 +24,7 @@ enum Gate1 {
 ///
 /// Not all gates are included here, just the ones we have in the language.
 #[derive(Clone, Copy, Debug)]
-enum Gate2 {
+pub enum Gate2 {
     Or,
     And,
     Xor,
@@ -36,7 +36,7 @@ enum Gate2 {
 /// This directly represents the elements of our language, and is not necessarily
 /// a fully optimized circuit representation.
 #[derive(Clone, Debug)]
-enum AST {
+pub enum AST {
     /// An input to the circuit.
     Input(Input),
     /// A gate taking in one input.
