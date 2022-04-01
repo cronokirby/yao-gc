@@ -1,7 +1,7 @@
 use std::{iter::Peekable, str::Chars};
 
 /// Represents a token produced by the lexer.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Token {
     /// The ! token
     Bang,
@@ -21,6 +21,16 @@ pub enum Token {
     A(u32),
     /// An input bX
     B(u32),
+}
+
+impl Token {
+    /// Return the input contained inside this token, if any.
+    pub fn get_input(&self) -> Option<u32> {
+        match self {
+            Token::A(x) | Token::B(x) => Some(*x),
+            _ => None,
+        }
+    }
 }
 
 /// Represents an error that can happen while lexing.
