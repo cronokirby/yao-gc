@@ -9,7 +9,7 @@ use super::lexer::Token;
 /// The inputs to the circuit either come from player A, or from player B.
 ///
 /// We use a u32 as an index, representing the ith input of that player to the circuit.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Input {
     /// An indexed input from player A.
     A(u32),
@@ -21,7 +21,7 @@ pub enum Input {
 ///
 /// Strictly speaking, this can only be the not gate, or a useless identity gate.
 /// Omitting the identity gate makes sense, because that would add needless complexity.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Gate1 {
     Not,
 }
@@ -29,7 +29,7 @@ pub enum Gate1 {
 /// Represents a gate taking in two inputs, expressible in our syntax.
 ///
 /// Not all gates are included here, just the ones we have in the language.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Gate2 {
     Or,
     And,
@@ -41,7 +41,7 @@ pub enum Gate2 {
 ///
 /// This directly represents the elements of our language, and is not necessarily
 /// a fully optimized circuit representation.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum AST {
     /// An input to the circuit.
     Input(Input),
@@ -105,4 +105,84 @@ impl From<peg::error::ParseError<usize>> for ParseError {
 /// This can fail if the string doesn't match the syntax of our language.
 pub fn parse(input: &[Token]) -> Result<AST, ParseError> {
     ast_parser::ast(input).map_err(|x| x.into())
+}
+
+#[cfg(test)]
+mod test {
+    use super::super::lexer::lex;
+    use super::*;
+
+    /// Assert that a string correctly parses to a given AST
+    macro_rules! assert_parse {
+        ($a:expr, $b:expr) => {{
+            let tokens = lex($a);
+            assert!(tokens.is_ok());
+            let tokens = tokens.unwrap();
+            let res = parse(&tokens);
+            assert!(res.is_ok());
+            assert_eq!(res.unwrap(), $b);
+        }};
+    }
+
+    #[test]
+    fn parsing_inputs() {
+        assert_parse!("a0", AST::Input(Input::A(0)));
+        assert_parse!("b10", AST::Input(Input::B(10)));
+    }
+
+    #[test]
+    fn parsing_gates() {
+        assert_parse!(
+            "(& a0 b0)",
+            AST::Gate2(
+                Gate2::And,
+                Box::new(AST::Input(Input::A(0))),
+                Box::new(AST::Input(Input::B(0)))
+            )
+        );
+        assert_parse!(
+            "(| a0 b0)",
+            AST::Gate2(
+                Gate2::Or,
+                Box::new(AST::Input(Input::A(0))),
+                Box::new(AST::Input(Input::B(0)))
+            )
+        );
+        assert_parse!(
+            "(^ a0 b0)",
+            AST::Gate2(
+                Gate2::Xor,
+                Box::new(AST::Input(Input::A(0))),
+                Box::new(AST::Input(Input::B(0)))
+            )
+        );
+        assert_parse!(
+            "(= a0 b0)",
+            AST::Gate2(
+                Gate2::Equal,
+                Box::new(AST::Input(Input::A(0))),
+                Box::new(AST::Input(Input::B(0)))
+            )
+        );
+        assert_parse!(
+            "(! a0)",
+            AST::Gate1(Gate1::Not, Box::new(AST::Input(Input::A(0))),)
+        );
+    }
+
+    #[test]
+    fn parsing_nested_gate() {
+        assert_parse!(
+            "(& a0 (& a1 a2))",
+            AST::Gate2(
+                Gate2::And,
+                Box::new(AST::Input(Input::A(0))),
+                Box::new(AST::Gate2(
+                    Gate2::And,
+                    Box::new(AST::Input(Input::A(1))),
+                    Box::new(AST::Input(Input::A(2)))
+                ))
+            )
+        );
+    }
 }
