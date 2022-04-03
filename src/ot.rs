@@ -4,15 +4,34 @@
 //!
 //! This implements the "Simplest OT" protocol, as seen in: https://eprint.iacr.org/2015/267.pdf
 
+use blake3;
+use chacha20::cipher::{KeyIvInit, StreamCipher};
+use chacha20::ChaCha8;
 use curve25519_dalek::constants;
 use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
 use rand::{CryptoRng, RngCore};
 use subtle::Choice;
 
+const DERIVE_KEY_FROM_POINT_CONTEXT: &'static str = "Yao-GC Derive Key From Point 2022-04-03";
+
+fn kdf(point: &RistrettoPoint) -> [u8; 32] {
+    blake3::derive_key(DERIVE_KEY_FROM_POINT_CONTEXT, point.compress().as_bytes())
+}
+
+/// Encrypt some data with a one time key.
+///
+/// The key shouldn't be used more than once.
+fn encrypt_once(key: &[u8; 32], data: &mut [u8]) {
+    let nonce = [0; 12];
+    let mut cipher = ChaCha8::new(key.into(), &nonce.into());
+    cipher.apply_keystream(data);
+}
+
 /// Represents an Error that can happen in the OT protocol.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum OTError {
+    SenderAlreadyFinished,
     UnexpectedMessageType(Option<u8>),
 }
 
@@ -89,7 +108,7 @@ impl Message {
 #[derive(Clone, Debug)]
 enum OTOutput {
     Message(Message),
-    SenderOutput,
+    SenderDone(Message),
     ReceiverOutput(Vec<u8>),
 }
 
@@ -110,6 +129,8 @@ enum Sender {
         m1: Vec<u8>,
         /// Our secret scalar.
         a: Scalar,
+        /// Our secret scalar times the generator.
+        big_a: RistrettoPoint,
     },
     S2,
 }
@@ -125,11 +146,29 @@ impl Sender {
                 let a = Scalar::random(rng);
                 let big_a = &a * &constants::RISTRETTO_BASEPOINT_TABLE;
                 (
-                    Sender::S1 { m0, m1, a },
+                    Sender::S1 { m0, m1, a, big_a },
                     OTOutput::Message(Message::M0(Message0 { point: big_a })),
                 )
             }
-            _ => unimplemented!(),
+            Sender::S1 {
+                mut m0,
+                mut m1,
+                a,
+                big_a,
+            } => {
+                let message1 = message.message1()?;
+                let point0 = a * message1.point;
+                let point1 = a * (message1.point - big_a);
+                let key0 = kdf(&point0);
+                let key1 = kdf(&point1);
+                encrypt_once(&key0, &mut m0);
+                encrypt_once(&key1, &mut m1);
+                (
+                    Sender::S2,
+                    OTOutput::SenderDone(Message::M2(Message2 { c0: m0, c1: m1 })),
+                )
+            }
+            Sender::S2 => return Err(OTError::SenderAlreadyFinished),
         };
         *self = new_self;
         Ok(res)
