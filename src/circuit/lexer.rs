@@ -1,4 +1,4 @@
-use std::{iter::Peekable, str::Chars};
+use std::{error::Error, fmt, iter::Peekable, str::Chars};
 
 /// Represents a token produced by the lexer.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -40,6 +40,23 @@ pub enum LexError {
     UnexpectedCharacter(char),
     /// We expected to see an index after the start of an input reference.
     ExpectedIndex,
+}
+
+impl fmt::Display for LexError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use LexError::*;
+
+        match self {
+            UnexpectedCharacter(c) => write!(f, "unexpected character: {}", c),
+            ExpectedIndex => write!(f, "expected index after input variable"),
+        }
+    }
+}
+
+impl Error for LexError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        None
+    }
 }
 
 struct Lexer<'a> {
