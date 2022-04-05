@@ -4,14 +4,14 @@
 //!
 //! This implements the "Simplest OT" protocol, as seen in: https://eprint.iacr.org/2015/267.pdf
 
-use blake3;
+use blake3::{self, derive_key};
 use chacha20::cipher::{KeyIvInit, StreamCipher};
 use chacha20::ChaCha8;
 use curve25519_dalek::constants;
 use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
 use rand::{CryptoRng, RngCore};
-use subtle::Choice;
+use subtle::{Choice, ConditionallySelectable};
 
 const DERIVE_KEY_FROM_POINT_CONTEXT: &'static str = "Yao-GC Derive Key From Point 2022-04-03";
 
@@ -28,10 +28,17 @@ fn encrypt_once(key: &[u8; 32], data: &mut [u8]) {
     cipher.apply_keystream(data);
 }
 
+/// Decrypt some data with a one time key.
+fn decrypt(key: &[u8; 32], data: &mut [u8]) {
+    // Yay, stream ciphers
+    encrypt_once(key, data);
+}
+
 /// Represents an Error that can happen in the OT protocol.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum OTError {
-    SenderAlreadyFinished,
+    AlreadyFinished,
+    UnequalCiphertextLengths(usize, usize),
     UnexpectedMessageType(Option<u8>),
 }
 
@@ -168,10 +175,16 @@ impl Sender {
                     OTOutput::SenderDone(Message::M2(Message2 { c0: m0, c1: m1 })),
                 )
             }
-            Sender::S2 => return Err(OTError::SenderAlreadyFinished),
+            Sender::S2 => return Err(OTError::AlreadyFinished),
         };
         *self = new_self;
         Ok(res)
+    }
+}
+
+fn conditional_assign_vec(out: &mut [u8], src: &[u8], choice: Choice) {
+    for (x, y) in out.iter_mut().zip(src.iter()) {
+        x.conditional_assign(y, choice);
     }
 }
 
@@ -180,7 +193,7 @@ impl Sender {
 /// The receiver's goal is to receive one of two messages, without learning
 /// the other message, and without revealing which to sender.
 #[derive(Clone, Debug)]
-enum Receiver {
+pub enum Receiver {
     R0 {
         /// Our secret choice of message.
         choice: Choice,
@@ -192,4 +205,47 @@ enum Receiver {
         key: [u8; 32],
     },
     R2,
+}
+
+impl Receiver {
+    pub fn advance<R: RngCore + CryptoRng>(
+        &mut self,
+        rng: &mut R,
+        message: Message,
+    ) -> Result<OTOutput, OTError> {
+        let (new_self, res) = match std::mem::replace(self, Receiver::R2) {
+            Receiver::R0 { choice } => {
+                let message0 = message.message0()?;
+
+                let b = Scalar::random(rng);
+                let key = kdf(&(b * message0.point));
+
+                let mut big_b = &b * &constants::RISTRETTO_BASEPOINT_TABLE;
+                let big_b_plus_a = big_b + message0.point;
+                big_b.conditional_assign(&big_b_plus_a, choice);
+
+                (
+                    Receiver::R1 { choice, key },
+                    OTOutput::Message(Message::M1(Message1 { point: big_b })),
+                )
+            }
+            Receiver::R1 { choice, key } => {
+                let Message2 { c0, c1 } = message.message2()?;
+                // The sender is required to provide equal length ciphertexts, to avoid timing leaks.
+                if c0.len() != c1.len() {
+                    return Err(OTError::UnequalCiphertextLengths(c0.len(), c1.len()));
+                }
+
+                let mut c = c0;
+                conditional_assign_vec(&mut c, &c1, choice);
+
+                decrypt(&key, &mut c);
+
+                (Receiver::R2, OTOutput::ReceiverOutput(c))
+            }
+            Receiver::R2 => return Err(OTError::AlreadyFinished),
+        };
+        *self = new_self;
+        Ok(res)
+    }
 }
