@@ -143,21 +143,22 @@ enum Sender {
 }
 
 impl Sender {
+
     fn advance<R: RngCore + CryptoRng>(
         &mut self,
         rng: &mut R,
         message: Message,
     ) -> Result<OTOutput, OTError> {
-        let (new_self, res) = match std::mem::replace(self, Sender::S2) {
-            Sender::S0 { m0, m1 } => {
+        let (new_self, res) = match std::mem::replace(self, Self::S2) {
+            Self::S0 { m0, m1 } => {
                 let a = Scalar::random(rng);
                 let big_a = &a * &constants::RISTRETTO_BASEPOINT_TABLE;
                 (
-                    Sender::S1 { m0, m1, a, big_a },
+                    Self::S1 { m0, m1, a, big_a },
                     OTOutput::Message(Message::M0(Message0 { point: big_a })),
                 )
             }
-            Sender::S1 {
+            Self::S1 {
                 mut m0,
                 mut m1,
                 a,
@@ -171,11 +172,11 @@ impl Sender {
                 encrypt_once(&key0, &mut m0);
                 encrypt_once(&key1, &mut m1);
                 (
-                    Sender::S2,
+                    Self::S2,
                     OTOutput::SenderDone(Message::M2(Message2 { c0: m0, c1: m1 })),
                 )
             }
-            Sender::S2 => return Err(OTError::AlreadyFinished),
+            Self::S2 => return Err(OTError::AlreadyFinished),
         };
         *self = new_self;
         Ok(res)
@@ -214,7 +215,7 @@ impl Receiver {
         message: Message,
     ) -> Result<OTOutput, OTError> {
         let (new_self, res) = match std::mem::replace(self, Receiver::R2) {
-            Receiver::R0 { choice } => {
+            Self::R0 { choice } => {
                 let message0 = message.message0()?;
 
                 let b = Scalar::random(rng);
@@ -225,11 +226,11 @@ impl Receiver {
                 big_b.conditional_assign(&big_b_plus_a, choice);
 
                 (
-                    Receiver::R1 { choice, key },
+                    Self::R1 { choice, key },
                     OTOutput::Message(Message::M1(Message1 { point: big_b })),
                 )
             }
-            Receiver::R1 { choice, key } => {
+            Self::R1 { choice, key } => {
                 let Message2 { c0, c1 } = message.message2()?;
                 // The sender is required to provide equal length ciphertexts, to avoid timing leaks.
                 if c0.len() != c1.len() {
@@ -241,9 +242,9 @@ impl Receiver {
 
                 decrypt(&key, &mut c);
 
-                (Receiver::R2, OTOutput::ReceiverOutput(c))
+                (Self::R2, OTOutput::ReceiverOutput(c))
             }
-            Receiver::R2 => return Err(OTError::AlreadyFinished),
+            Self::R2 => return Err(OTError::AlreadyFinished),
         };
         *self = new_self;
         Ok(res)
