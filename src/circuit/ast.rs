@@ -1,7 +1,5 @@
 use std::{error::Error, fmt};
 
-use peg;
-
 use super::lexer::Token;
 
 /// Represents an initial input to the circuit.

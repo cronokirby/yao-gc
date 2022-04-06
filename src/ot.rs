@@ -4,7 +4,6 @@
 //!
 //! This implements the "Simplest OT" protocol, as seen in: https://eprint.iacr.org/2015/267.pdf
 
-use blake3::{self, derive_key};
 use chacha20::cipher::{KeyIvInit, StreamCipher};
 use chacha20::ChaCha8;
 use curve25519_dalek::constants;
@@ -15,6 +14,7 @@ use subtle::{Choice, ConditionallySelectable};
 
 const DERIVE_KEY_FROM_POINT_CONTEXT: &'static str = "Yao-GC Derive Key From Point 2022-04-03";
 
+/// Derive a key from a point.
 fn kdf(point: &RistrettoPoint) -> [u8; 32] {
     blake3::derive_key(DERIVE_KEY_FROM_POINT_CONTEXT, point.compress().as_bytes())
 }
@@ -36,7 +36,7 @@ fn decrypt(key: &[u8; 32], data: &mut [u8]) {
 
 /// Represents an Error that can happen in the OT protocol.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum OTError {
+pub enum OTError {
     AlreadyFinished,
     UnequalCiphertextLengths(usize, usize),
     UnexpectedMessageType(Option<u8>),
@@ -60,7 +60,7 @@ struct Message2 {
 
 /// Represents a message that can be sent during the oblivious transfer protocol.
 #[derive(Clone, Debug)]
-enum Message {
+pub enum Message {
     Start,
     /// The first message, sent from the sender to the receiver.
     M0(Message0),
@@ -113,9 +113,12 @@ impl Message {
 ///
 /// This output is either the final result of the protocol, or a new message to send.
 #[derive(Clone, Debug)]
-enum OTOutput {
+pub enum OTOutput {
+    /// We need to send a message to the other party.
     Message(Message),
+    /// The sender has finished, and needs to send a final message to the receiver.
     SenderDone(Message),
+    /// The receiver has finished, with some output value.
     ReceiverOutput(Vec<u8>),
 }
 
@@ -143,8 +146,17 @@ enum Sender {
 }
 
 impl Sender {
+    /// Create a new sender, with the two messages that need to be sent.
+    pub fn new(m0: Vec<u8>, m1: Vec<u8>) -> Self {
+        Self::S0 { m0, m1 }
+    }
 
-    fn advance<R: RngCore + CryptoRng>(
+    /// Advance the sender, given a source of randomness, and the next message.
+    ///
+    /// The outcome is either an error, a message, or the output of the protocol.
+    ///
+    /// In the case of the sender, there's no output.
+    pub fn advance<R: RngCore + CryptoRng>(
         &mut self,
         rng: &mut R,
         message: Message,
@@ -209,6 +221,14 @@ pub enum Receiver {
 }
 
 impl Receiver {
+    /// Create a new receiver, using their secret choice.
+    pub fn new(choice: Choice) -> Receiver {
+        Self::R0 { choice }
+    }
+
+    /// Advance the receiver, given a source of randomness, and the next message.
+    ///
+    /// The outcome is either an error, a message, or the output of the protocol.
     pub fn advance<R: RngCore + CryptoRng>(
         &mut self,
         rng: &mut R,
