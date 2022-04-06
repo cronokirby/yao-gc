@@ -270,3 +270,53 @@ impl Receiver {
         Ok(res)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use rand::rngs::OsRng;
+
+    use super::*;
+
+    fn execute_protocol(m0: Vec<u8>, m1: Vec<u8>, choice: Choice) -> Result<Vec<u8>, OTError> {
+        let rng = &mut OsRng;
+
+        let mut s = Sender::new(m0, m1);
+        let mut r = Receiver::new(choice);
+
+        let mut message = Message::Start;
+        let mut sender = true;
+        loop {
+            let was_sender = sender;
+            sender = !sender;
+            if was_sender {
+                message = match s.advance(rng, message)? {
+                    OTOutput::Message(m) => m,
+                    OTOutput::SenderDone(m) => m,
+                    OTOutput::ReceiverOutput(_) => unreachable!(),
+                }
+            } else {
+                message = match r.advance(rng, message)? {
+                    OTOutput::Message(m) => m,
+                    OTOutput::SenderDone(_) => unreachable!(),
+                    OTOutput::ReceiverOutput(output) => return Ok(output),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn executing_with_zero_works() {
+        let m0 = b"hello".to_vec();
+        let m1 = b"world".to_vec();
+        let choice = Choice::from(0);
+        assert_eq!(execute_protocol(m0.clone(), m1, choice), Ok(m0));
+    }
+
+    #[test]
+    fn executing_with_one_works() {
+        let m0 = b"hello".to_vec();
+        let m1 = b"world".to_vec();
+        let choice = Choice::from(1);
+        assert_eq!(execute_protocol(m0, m1.clone(), choice), Ok(m1));
+    }
+}
