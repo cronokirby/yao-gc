@@ -1,4 +1,5 @@
 mod circuit;
+mod garbling;
 mod ot;
 
 fn main() {
