@@ -34,6 +34,22 @@ struct EncryptedKeyTable {
     entries: [EncryptedKey; 4],
 }
 
+/// Represents the encryption of a single bit.
+#[derive(Clone, Copy, Debug)]
+struct EncryptedBit {
+    /// The nonce used to encrypt this byte.
+    nonce: [u8; 12],
+    /// The encryption of either 0, or 1.
+    ciphertext: [u8; 1],
+}
+
+/// Represents a table with the encrypted output of the circuit.
+#[derive(Clone, Copy, Debug)]
+struct EncryptedOutput {
+    /// One entry for each of the possible output bits.
+    entries: [EncryptedBit; 2],
+}
+
 /// Represents a Garbled Circuit.
 ///
 /// This can be seen as an encrypted version of the circuit we want to evaluate.
