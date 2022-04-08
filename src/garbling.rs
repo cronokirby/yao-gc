@@ -1,4 +1,4 @@
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng, RngCore};
 use subtle::Choice;
 
 use crate::circuit::Circuit;
@@ -10,6 +10,31 @@ pub struct WireKey {
     pub key: [u8; 32],
     /// Which of the two entries this key is intended to decrypt.
     pub pointer: Choice,
+}
+
+impl WireKey {
+    /// Generate a random pair of wire keys.
+    ///
+    /// Generating them in a pair is important, so that one pointer bit is
+    /// the opposite of the other pointer bit.
+    fn random_pair<R: RngCore + CryptoRng>(rng: &mut R) -> (WireKey, WireKey) {
+        let mut key0 = [0u8; 32];
+        rng.fill_bytes(&mut key0);
+        let mut key1 = [0u8; 32];
+        rng.fill_bytes(&mut key1);
+        let pointer0 = Choice::from((rng.next_u32() & 1) as u8);
+        let pointer1 = !pointer0;
+        (
+            WireKey {
+                key: key0,
+                pointer: pointer0,
+            },
+            WireKey {
+                key: key1,
+                pointer: pointer1,
+            },
+        )
+    }
 }
 
 /// This holds all of the keys we use for each of the inputs.
