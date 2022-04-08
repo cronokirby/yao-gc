@@ -5,7 +5,7 @@ use crate::circuit::Circuit;
 
 /// Represents a key hiding the value of a wire, essentially.
 #[derive(Clone, Debug)]
-pub struct InputKey {
+pub struct WireKey {
     /// A key half the size of an encryption key.
     ///
     /// When combined with another key, we can do some encryption.
@@ -20,6 +20,21 @@ pub struct InputKey {
 /// structure holds these keys. We can then use these keys to run the interactive
 /// portion of the protocol, by transmitting the correct keys to the other party.
 pub struct InputKeys;
+
+/// Represents an encrypted WireKey.
+#[derive(Clone, Copy, Debug)]
+struct EncryptedKey {
+    /// The nonce used to encrypt the ciphertext.
+    nonce: [u8; 12],
+    /// The ciphertext includes the half key, and the pointer bit as a full byte.
+    ciphertext: [u8; 17],
+}
+
+/// Represents an encrypted table holding the next encrypted key.
+#[derive(Clone, Copy, Debug)]
+struct EncryptedKeyTable {
+    entries: [EncryptedKey; 4],
+}
 
 /// Represents a Garbled Circuit.
 ///
