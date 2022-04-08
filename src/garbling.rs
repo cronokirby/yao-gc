@@ -20,7 +20,7 @@ pub struct WireKey {
 pub struct InputKeys;
 
 /// This holds only one of each key in InputKeys.
-/// 
+///
 /// The evaluator creates this view with the help of the garbler, using
 /// oblivious transfer to receive the right keys.
 pub struct InputKeysView;
@@ -72,5 +72,10 @@ pub fn garble<R: RngCore + CryptoRng>(
     rng: &mut R,
     circuit: Circuit,
 ) -> (InputKeys, GarbledCircuit) {
+    todo!()
+}
+
+/// Evaluate a garbled circuit using a view of the input keys, returning the output.
+pub fn evaluate(view: InputKeysView, circuit: GarbledCircuit) -> bool {
     todo!()
 }
