@@ -6,10 +6,8 @@ use crate::circuit::Circuit;
 /// Represents a key hiding the value of a wire, essentially.
 #[derive(Clone, Debug)]
 pub struct WireKey {
-    /// A key half the size of an encryption key.
-    ///
-    /// When combined with another key, we can do some encryption.
-    pub half_key: [u8; 16],
+    /// A key for our cipher of choice.
+    pub half_key: [u8; 32],
     /// Which of the two entries this key is intended to decrypt.
     pub pointer: Choice,
 }
@@ -27,7 +25,7 @@ struct EncryptedKey {
     /// The nonce used to encrypt the ciphertext.
     nonce: [u8; 12],
     /// The ciphertext includes the half key, and the pointer bit as a full byte.
-    ciphertext: [u8; 17],
+    ciphertext: [u8; 33],
 }
 
 /// Represents an encrypted table holding the next encrypted key.
