@@ -1,6 +1,18 @@
 use rand::{CryptoRng, RngCore};
+use subtle::Choice;
 
 use crate::circuit::Circuit;
+
+/// Represents a key hiding the value of a wire, essentially.
+#[derive(Clone, Debug)]
+pub struct InputKey {
+    /// A key half the size of an encryption key.
+    ///
+    /// When combined with another key, we can do some encryption.
+    pub half_key: [u8; 16],
+    /// Which of the two entries this key is intended to decrypt.
+    pub pointer: Choice,
+}
 
 /// This holds all of the keys we use for each of the inputs.
 ///
