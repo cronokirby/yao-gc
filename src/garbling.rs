@@ -7,7 +7,7 @@ use crate::circuit::Circuit;
 #[derive(Clone, Debug)]
 pub struct WireKey {
     /// A key for our cipher of choice.
-    pub half_key: [u8; 32],
+    pub key: [u8; 32],
     /// Which of the two entries this key is intended to decrypt.
     pub pointer: Choice,
 }
@@ -17,13 +17,23 @@ pub struct WireKey {
 /// The idea is that each input has two keys associated with it. This data
 /// structure holds these keys. We can then use these keys to run the interactive
 /// portion of the protocol, by transmitting the correct keys to the other party.
-pub struct InputKeys;
+#[derive(Clone, Debug)]
+pub struct InputKeys {
+    // For each participant's bit, we hold both of the keys they might use.
+    a_keys: Vec<(WireKey, WireKey)>,
+    b_keys: Vec<(WireKey, WireKey)>,
+}
 
 /// This holds only one of each key in InputKeys.
 ///
 /// The evaluator creates this view with the help of the garbler, using
 /// oblivious transfer to receive the right keys.
-pub struct InputKeysView;
+#[derive(Clone, Debug)]
+pub struct InputKeysView {
+    // For each participant's bit, we hold the key representing their choice bit.
+    a_keys: Vec<WireKey>,
+    b_keys: Vec<WireKey>,
+}
 
 /// Represents an encrypted WireKey.
 #[derive(Clone, Copy, Debug)]
