@@ -19,6 +19,12 @@ pub struct WireKey {
 /// portion of the protocol, by transmitting the correct keys to the other party.
 pub struct InputKeys;
 
+/// This holds only one of each key in InputKeys.
+/// 
+/// The evaluator creates this view with the help of the garbler, using
+/// oblivious transfer to receive the right keys.
+pub struct InputKeysView;
+
 /// Represents an encrypted WireKey.
 #[derive(Clone, Copy, Debug)]
 struct EncryptedKey {
