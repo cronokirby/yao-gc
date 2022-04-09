@@ -110,6 +110,25 @@ pub struct InputKeys {
     b_keys: Vec<WireKeyPair>,
 }
 
+impl InputKeys {
+    /// Generate all the input key pairs we'll be needing.
+    ///
+    /// To know how many we'll need, we need to know the largest index used
+    /// for each side, plus one. This will allow us to populate an array for
+    /// these indices.
+    fn generate<R: RngCore + CryptoRng>(rng: &mut R, a_count: usize, b_count: usize) -> Self {
+        let mut make_vec = |count| {
+            (0..count)
+                .map(|_| WireKey::random_pair(rng))
+                .collect::<Vec<WireKeyPair>>()
+        };
+        InputKeys {
+            a_keys: make_vec(a_count),
+            b_keys: make_vec(b_count),
+        }
+    }
+}
+
 /// This holds only one of each key in InputKeys.
 ///
 /// The evaluator creates this view with the help of the garbler, using
