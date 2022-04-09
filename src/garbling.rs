@@ -1,16 +1,26 @@
-use rand::{CryptoRng, Rng, RngCore};
-use subtle::Choice;
+use chacha20::{cipher::KeyIvInit, cipher::StreamCipher, XChaCha8};
+use rand::{CryptoRng, RngCore};
+use subtle::{Choice, ConditionallySelectable};
 
 use crate::circuit::Circuit;
 
+/// Apply a compact gate representation to two bits
+fn apply_gate(gate: u8, a: bool, b: bool) -> bool {
+    // We interpret the first two bits as a two bit index, and use that
+    // to access the corresponding output bit inside of the gate.
+    ((gate >> ((u8::from(a) << 1) | u8::from(b))) & 1) == 1
+}
+
 /// Represents a key hiding the value of a wire, essentially.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct WireKey {
     /// A key for our cipher of choice.
     pub key: [u8; 32],
     /// Which of the two entries this key is intended to decrypt.
     pub pointer: Choice,
 }
+
+pub type WireKeyPair = (WireKey, WireKey);
 
 impl WireKey {
     /// Generate a random pair of wire keys.
@@ -35,6 +45,30 @@ impl WireKey {
             },
         )
     }
+
+    fn encrypt<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        key_a: &WireKey,
+        key_b: &WireKey,
+    ) -> EncryptedKey {
+        let mut key = key_a.key;
+        for i in 0..32 {
+            key[i] ^= key_b.key[i];
+        }
+
+        let mut nonce = [0u8; 24];
+        rng.fill_bytes(&mut nonce);
+
+        let mut ciphertext = [0u8; 33];
+        ciphertext[..32].copy_from_slice(&self.key);
+        ciphertext[33] = self.pointer.unwrap_u8();
+
+        let mut cipher = XChaCha8::new(&key.into(), &nonce.into());
+        cipher.apply_keystream(&mut ciphertext);
+
+        EncryptedKey { nonce, ciphertext }
+    }
 }
 
 /// This holds all of the keys we use for each of the inputs.
@@ -45,8 +79,8 @@ impl WireKey {
 #[derive(Clone, Debug)]
 pub struct InputKeys {
     // For each participant's bit, we hold both of the keys they might use.
-    a_keys: Vec<(WireKey, WireKey)>,
-    b_keys: Vec<(WireKey, WireKey)>,
+    a_keys: Vec<WireKeyPair>,
+    b_keys: Vec<WireKeyPair>,
 }
 
 /// This holds only one of each key in InputKeys.
@@ -64,15 +98,63 @@ pub struct InputKeysView {
 #[derive(Clone, Copy, Debug)]
 struct EncryptedKey {
     /// The nonce used to encrypt the ciphertext.
-    nonce: [u8; 12],
+    nonce: [u8; 24],
     /// The ciphertext includes the half key, and the pointer bit as a full byte.
     ciphertext: [u8; 33],
+}
+
+impl ConditionallySelectable for EncryptedKey {
+    fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
+        let mut nonce = [0; 24];
+        for (i, nonce_i) in nonce.iter_mut().enumerate() {
+            *nonce_i = u8::conditional_select(&a.nonce[i], &b.nonce[i], choice);
+        }
+        let mut ciphertext = [0; 33];
+        for (i, ciphertext_i) in ciphertext.iter_mut().enumerate() {
+            *ciphertext_i = u8::conditional_select(&a.ciphertext[i], &b.ciphertext[i], choice);
+        }
+        Self { nonce, ciphertext }
+    }
 }
 
 /// Represents an encrypted table holding the next encrypted key.
 #[derive(Clone, Copy, Debug)]
 struct EncryptedKeyTable {
-    entries: [EncryptedKey; 4],
+    table: [EncryptedKey; 4],
+}
+
+impl EncryptedKeyTable {
+    fn build<R: CryptoRng + RngCore>(
+        rng: &mut R,
+        gate: u8,
+        input_a: WireKeyPair,
+        input_b: WireKeyPair,
+        output: WireKeyPair,
+    ) -> Self {
+        let (out0, out1) = output;
+
+        let out_wire = |a, b| {
+            if apply_gate(gate, a, b) {
+                out1
+            } else {
+                out0
+            }
+        };
+
+        let mut out00 = out_wire(false, false).encrypt(rng, &input_a.0, &input_b.0);
+        let mut out01 = out_wire(false, true).encrypt(rng, &input_a.0, &input_b.1);
+        let mut out10 = out_wire(true, false).encrypt(rng, &input_a.1, &input_b.0);
+        let mut out11 = out_wire(true, true).encrypt(rng, &input_a.1, &input_b.1);
+
+        EncryptedKey::conditional_swap(&mut out00, &mut out10, input_a.0.pointer);
+        EncryptedKey::conditional_swap(&mut out01, &mut out11, input_a.0.pointer);
+        EncryptedKey::conditional_swap(&mut out00, &mut out01, input_b.0.pointer);
+        EncryptedKey::conditional_swap(&mut out10, &mut out11, input_b.0.pointer);
+
+        Self {
+            table: [out00, out01, out10, out11],
+        }
+    }
 }
 
 /// Represents the encryption of a single bit.
