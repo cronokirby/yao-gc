@@ -4,6 +4,37 @@ use subtle::{Choice, ConditionallySelectable};
 
 use crate::circuit::Circuit;
 
+/// The number of bytes in an encryption key
+const ENCRYPTION_KEY_SIZE: usize = 32;
+
+/// The type we use for our encryption.
+type EncryptionKey = [u8; ENCRYPTION_KEY_SIZE];
+
+/// The number of bytes in a nonce.
+const NONCE_SIZE: usize = 24;
+
+/// The type of nonce we use for encryption.
+///
+/// These nonces are randomly generated.
+type Nonce = [u8; NONCE_SIZE];
+
+/// Generate a random nonce.
+fn random_nonce<R: RngCore + CryptoRng>(rng: &mut R) -> Nonce {
+    let mut nonce = [0; NONCE_SIZE];
+    rng.fill_bytes(&mut nonce);
+    nonce
+}
+
+/// Encrypt some data in place, returning the random nonce used to encrypt the data.
+fn encrypt<R: RngCore + CryptoRng>(rng: &mut R, key: &EncryptionKey, data: &mut [u8]) -> Nonce {
+    let nonce = random_nonce(rng);
+
+    let mut cipher = XChaCha8::new(key.into(), &nonce.into());
+    cipher.apply_keystream(data);
+
+    nonce
+}
+
 /// Apply a compact gate representation to two bits
 fn apply_gate(gate: u8, a: bool, b: bool) -> bool {
     // We interpret the first two bits as a two bit index, and use that
@@ -15,7 +46,7 @@ fn apply_gate(gate: u8, a: bool, b: bool) -> bool {
 #[derive(Clone, Copy, Debug)]
 pub struct WireKey {
     /// A key for our cipher of choice.
-    pub key: [u8; 32],
+    pub key: EncryptionKey,
     /// Which of the two entries this key is intended to decrypt.
     pub pointer: Choice,
 }
@@ -52,20 +83,16 @@ impl WireKey {
         key_a: &WireKey,
         key_b: &WireKey,
     ) -> EncryptedKey {
-        let mut key = key_a.key;
-        for i in 0..32 {
-            key[i] ^= key_b.key[i];
+        let mut key = [0; ENCRYPTION_KEY_SIZE];
+        for (i, (a_i, b_i)) in key_a.key.iter().zip(key_b.key.iter()).enumerate() {
+            key[i] = a_i ^ b_i;
         }
 
-        let mut nonce = [0u8; 24];
-        rng.fill_bytes(&mut nonce);
-
         let mut ciphertext = [0u8; 33];
-        ciphertext[..32].copy_from_slice(&self.key);
+        ciphertext[..ENCRYPTION_KEY_SIZE].copy_from_slice(&self.key);
         ciphertext[33] = self.pointer.unwrap_u8();
 
-        let mut cipher = XChaCha8::new(&key.into(), &nonce.into());
-        cipher.apply_keystream(&mut ciphertext);
+        let nonce = encrypt(rng, &key, &mut ciphertext);
 
         EncryptedKey { nonce, ciphertext }
     }
@@ -98,18 +125,18 @@ pub struct InputKeysView {
 #[derive(Clone, Copy, Debug)]
 struct EncryptedKey {
     /// The nonce used to encrypt the ciphertext.
-    nonce: [u8; 24],
+    nonce: Nonce,
     /// The ciphertext includes the half key, and the pointer bit as a full byte.
-    ciphertext: [u8; 33],
+    ciphertext: [u8; ENCRYPTION_KEY_SIZE + 1],
 }
 
 impl ConditionallySelectable for EncryptedKey {
     fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
-        let mut nonce = [0; 24];
+        let mut nonce = [0; NONCE_SIZE];
         for (i, nonce_i) in nonce.iter_mut().enumerate() {
             *nonce_i = u8::conditional_select(&a.nonce[i], &b.nonce[i], choice);
         }
-        let mut ciphertext = [0; 33];
+        let mut ciphertext = [0; ENCRYPTION_KEY_SIZE + 1];
         for (i, ciphertext_i) in ciphertext.iter_mut().enumerate() {
             *ciphertext_i = u8::conditional_select(&a.ciphertext[i], &b.ciphertext[i], choice);
         }
@@ -161,7 +188,7 @@ impl EncryptedKeyTable {
 #[derive(Clone, Copy, Debug)]
 struct EncryptedBit {
     /// The nonce used to encrypt this byte.
-    nonce: [u8; 12],
+    nonce: Nonce,
     /// The encryption of either 0, or 1.
     ciphertext: [u8; 1],
 }
