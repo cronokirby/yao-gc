@@ -190,7 +190,34 @@ struct EncryptedBit {
     /// The nonce used to encrypt this byte.
     nonce: Nonce,
     /// The encryption of either 0, or 1.
-    ciphertext: [u8; 1],
+    ciphertext: u8,
+}
+
+impl EncryptedBit {
+    /// Encrypt a bit of data, using a given key, and with a random nonce.
+    fn encrypt<R: RngCore + CryptoRng>(
+        rng: &mut R,
+        key: &EncryptionKey,
+        bit: bool,
+    ) -> EncryptedBit {
+        let mut ciphertext = [u8::from(bit)];
+        let nonce = encrypt(rng, key, &mut ciphertext);
+        EncryptedBit {
+            nonce,
+            ciphertext: ciphertext[0],
+        }
+    }
+}
+
+impl ConditionallySelectable for EncryptedBit {
+    fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
+        let mut nonce = [0; NONCE_SIZE];
+        for (i, nonce_i) in nonce.iter_mut().enumerate() {
+            *nonce_i = u8::conditional_select(&a.nonce[i], &b.nonce[i], choice);
+        }
+        let ciphertext = u8::conditional_select(&a.ciphertext, &b.ciphertext, choice);
+        Self { nonce, ciphertext }
+    }
 }
 
 /// Represents a table with the encrypted output of the circuit.
@@ -198,6 +225,23 @@ struct EncryptedBit {
 struct EncryptedOutput {
     /// One entry for each of the possible output bits.
     entries: [EncryptedBit; 2],
+}
+
+impl EncryptedOutput {
+    /// Create an encrypted output table from a wire key pair.
+    fn from_wirekey_pair<R: RngCore + CryptoRng>(
+        rng: &mut R,
+        pair: WireKeyPair,
+    ) -> EncryptedOutput {
+        let mut out0 = EncryptedBit::encrypt(rng, &pair.0.key, false);
+        let mut out1 = EncryptedBit::encrypt(rng, &pair.1.key, true);
+
+        EncryptedBit::conditional_swap(&mut out0, &mut out1, pair.0.pointer);
+
+        EncryptedOutput {
+            entries: [out0, out1],
+        }
+    }
 }
 
 /// Represents a Garbled Circuit.
