@@ -2,7 +2,7 @@ use chacha20::{cipher::KeyIvInit, cipher::StreamCipher, XChaCha8};
 use rand::{CryptoRng, RngCore};
 use subtle::{Choice, ConditionallySelectable};
 
-use crate::circuit::Circuit;
+use crate::circuit::{Circuit, Input};
 
 /// The number of bytes in an encryption key
 const ENCRYPTION_KEY_SIZE: usize = 32;
@@ -125,6 +125,14 @@ impl InputKeys {
         InputKeys {
             a_keys: make_vec(a_count),
             b_keys: make_vec(b_count),
+        }
+    }
+
+    /// Lookup the key pair associated with some input.
+    fn lookup(&self, input: Input) -> WireKeyPair {
+        match input {
+            Input::A(i) => self.a_keys[i as usize],
+            Input::B(i) => self.b_keys[i as usize],
         }
     }
 }
@@ -268,7 +276,57 @@ impl EncryptedOutput {
 /// This can be seen as an encrypted version of the circuit we want to evaluate.
 /// Given the correct keys for each input to the circuit, we can evaluate the
 /// final result.
-pub struct GarbledCircuit;
+#[derive(Clone, Debug)]
+pub struct GarbledCircuit {
+    /// The tables for each gate composing the circuit.
+    ///
+    /// These are ordered according to a preorder traversal of the circuit:
+    /// i.e. go all the way down the left input each time.
+    tables: Vec<EncryptedKeyTable>,
+    /// The encrypted output data.
+    output: EncryptedOutput,
+}
+
+/// A Garbler is a helper when garbling a circuit.
+///
+/// The main role is to hold the table of outputs we're working on.
+#[derive(Clone, Debug)]
+struct Garbler {
+    /// The table of all input keys to the circuit.
+    input_keys: InputKeys,
+    /// The tables we're steadily accumulating.
+    tables: Vec<EncryptedKeyTable>,
+}
+
+impl Garbler {
+    /// Create a new Garbler, from the set of input keys.
+    fn new(input_keys: InputKeys) -> Self {
+        Self {
+            input_keys,
+            tables: Vec::new(),
+        }
+    }
+
+    /// Garble a circuit, adding tables to this struct, and producing a wire key pair.
+    fn garble<R: RngCore + CryptoRng>(&mut self, rng: &mut R, circuit: &Circuit) -> WireKeyPair {
+        match circuit {
+            Circuit::Input(i) => self.input_keys.lookup(*i),
+            Circuit::NegatedInput(i) => {
+                let (w0, w1) = self.input_keys.lookup(*i);
+                (w1, w0)
+            }
+            Circuit::Gate(gate, left, right) => {
+                let left_keys = self.garble(rng, left);
+                let right_keys = self.garble(rng, right);
+                let output = WireKey::random_pair(rng);
+                self.tables.push(EncryptedKeyTable::build(
+                    rng, *gate, left_keys, right_keys, output,
+                ));
+                output
+            }
+        }
+    }
+}
 
 /// Garble a circuit, given a source of randomness.
 ///
@@ -277,9 +335,18 @@ pub struct GarbledCircuit;
 /// of the protocol.
 pub fn garble<R: RngCore + CryptoRng>(
     rng: &mut R,
-    circuit: Circuit,
+    circuit: &Circuit,
 ) -> (InputKeys, GarbledCircuit) {
-    todo!()
+    let (a_count, b_count) = circuit.input_counts();
+    let input_keys = InputKeys::generate(rng, a_count, b_count);
+    let mut garbler = Garbler::new(input_keys);
+    let output_keys = garbler.garble(rng, circuit);
+    let output = EncryptedOutput::from_wirekey_pair(rng, output_keys);
+    let garbled = GarbledCircuit {
+        tables: garbler.tables,
+        output,
+    };
+    (garbler.input_keys, garbled)
 }
 
 /// Evaluate a garbled circuit using a view of the input keys, returning the output.

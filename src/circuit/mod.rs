@@ -34,6 +34,27 @@ impl Circuit {
             Gate(g, _, _) => *g = invert_gate_output(*g),
         }
     }
+
+    /// Return the maximum input values used in the circuit, for each side, plus 1.
+    ///
+    /// If an input side happened to not be used, 0 would be used for that side.
+    pub fn input_counts(&self) -> (usize, usize) {
+        fn input_counts_on_input(input: Input) -> (usize, usize) {
+            match input {
+                Input::A(x) => (x as usize + 1, 0),
+                Input::B(x) => (0, x as usize + 1),
+            }
+        }
+
+        match self {
+            Circuit::Input(i) | Circuit::NegatedInput(i) => input_counts_on_input(*i),
+            Circuit::Gate(_, left, right) => {
+                let (a0, b0) = left.input_counts();
+                let (a1, b1) = right.input_counts();
+                (a0.max(a1), b0.max(b1))
+            }
+        }
+    }
 }
 
 /// Convert a syntactical gate into a lookup table gate.
