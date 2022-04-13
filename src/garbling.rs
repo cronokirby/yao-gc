@@ -35,6 +35,12 @@ fn encrypt<R: RngCore + CryptoRng>(rng: &mut R, key: &EncryptionKey, data: &mut 
     nonce
 }
 
+/// Decrypt some data in place
+fn decrypt(nonce: &Nonce, key: &EncryptionKey, data: &mut [u8]) {
+    let mut cipher = XChaCha8::new(key.into(), nonce.into());
+    cipher.apply_keystream(data);
+}
+
 /// Apply a compact gate representation to two bits
 fn apply_gate(gate: u8, a: bool, b: bool) -> bool {
     // We interpret the first two bits as a two bit index, and use that
@@ -148,6 +154,16 @@ pub struct InputKeysView {
     b_keys: Vec<WireKey>,
 }
 
+impl InputKeysView {
+    /// Lookup the key associated with some input.
+    fn lookup(&self, input: Input) -> WireKey {
+        match input {
+            Input::A(i) => self.a_keys[i as usize],
+            Input::B(i) => self.b_keys[i as usize],
+        }
+    }
+}
+
 /// Represents an encrypted WireKey.
 #[derive(Clone, Copy, Debug)]
 struct EncryptedKey {
@@ -168,6 +184,25 @@ impl ConditionallySelectable for EncryptedKey {
             *ciphertext_i = u8::conditional_select(&a.ciphertext[i], &b.ciphertext[i], choice);
         }
         Self { nonce, ciphertext }
+    }
+}
+
+impl EncryptedKey {
+    fn decrypt(&self, key_a: &WireKey, key_b: &WireKey) -> WireKey {
+        let mut key = [0; ENCRYPTION_KEY_SIZE];
+        for (i, (a_i, b_i)) in key_a.key.iter().zip(key_b.key.iter()).enumerate() {
+            key[i] = a_i ^ b_i;
+        }
+
+        let mut plaintext = self.ciphertext.clone();
+        decrypt(&self.nonce, &key, &mut plaintext);
+
+        let mut key = [0u8; ENCRYPTION_KEY_SIZE];
+        key.copy_from_slice(&plaintext[..ENCRYPTION_KEY_SIZE]);
+        WireKey {
+            key,
+            pointer: Choice::from(plaintext[ENCRYPTION_KEY_SIZE]),
+        }
     }
 }
 
@@ -209,6 +244,15 @@ impl EncryptedKeyTable {
             table: [out00, out01, out10, out11],
         }
     }
+
+    fn decrypt(&self, a: WireKey, b: WireKey) -> WireKey {
+        let encrypted = EncryptedKey::conditional_select(
+            &EncryptedKey::conditional_select(&self.table[0], &self.table[2], a.pointer),
+            &EncryptedKey::conditional_select(&self.table[1], &self.table[3], a.pointer),
+            b.pointer,
+        );
+        encrypted.decrypt(&a, &b)
+    }
 }
 
 /// Represents the encryption of a single bit.
@@ -233,6 +277,13 @@ impl EncryptedBit {
             nonce,
             ciphertext: ciphertext[0],
         }
+    }
+
+    /// Decrypt an encrypted bit, with the right key.
+    fn decrypt(&self, key: &EncryptionKey) -> bool {
+        let mut plaintext = [self.ciphertext];
+        decrypt(&self.nonce, key, &mut plaintext);
+        plaintext[0] == 0
     }
 }
 
@@ -268,6 +319,12 @@ impl EncryptedOutput {
         EncryptedOutput {
             entries: [out0, out1],
         }
+    }
+
+    /// Decrypt this output, returning the bit contained inside.
+    fn decrypt(&self, key: &WireKey) -> bool {
+        EncryptedBit::conditional_select(&self.entries[0], &self.entries[1], key.pointer)
+            .decrypt(&key.key)
     }
 }
 
@@ -349,7 +406,38 @@ pub fn garble<R: RngCore + CryptoRng>(
     (garbler.input_keys, garbled)
 }
 
+struct UnGarbler<'a> {
+    input_keys: &'a InputKeysView,
+    garbled: &'a GarbledCircuit,
+    table_index: usize,
+}
+
+impl<'a> UnGarbler<'a> {
+    fn new(input_keys: &'a InputKeysView, garbled: &'a GarbledCircuit) -> Self {
+        UnGarbler {
+            input_keys,
+            garbled,
+            table_index: 0,
+        }
+    }
+
+    fn ungarble(&mut self, circuit: &Circuit) -> WireKey {
+        match circuit {
+            Circuit::Input(i) | Circuit::NegatedInput(i) => self.input_keys.lookup(*i),
+            Circuit::Gate(_, left, right) => {
+                let left_key = self.ungarble(left);
+                let right_key = self.ungarble(right);
+                let table = self.garbled.tables[self.table_index];
+                self.table_index += 1;
+                table.decrypt(left_key, right_key)
+            }
+        }
+    }
+}
+
 /// Evaluate a garbled circuit using a view of the input keys, returning the output.
-pub fn evaluate(view: InputKeysView, circuit: GarbledCircuit) -> bool {
-    todo!()
+pub fn evaluate(view: &InputKeysView, garbled: &GarbledCircuit, circuit: &Circuit) -> bool {
+    let mut ungarbler = UnGarbler::new(view, garbled);
+    let output_key = ungarbler.ungarble(circuit);
+    garbled.output.decrypt(&output_key)
 }
