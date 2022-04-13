@@ -96,7 +96,7 @@ impl WireKey {
 
         let mut ciphertext = [0u8; 33];
         ciphertext[..ENCRYPTION_KEY_SIZE].copy_from_slice(&self.key);
-        ciphertext[33] = self.pointer.unwrap_u8();
+        ciphertext[ENCRYPTION_KEY_SIZE] = self.pointer.unwrap_u8();
 
         let nonce = encrypt(rng, &key, &mut ciphertext);
 
@@ -112,8 +112,8 @@ impl WireKey {
 #[derive(Clone, Debug)]
 pub struct InputKeys {
     // For each participant's bit, we hold both of the keys they might use.
-    a_keys: Vec<WireKeyPair>,
-    b_keys: Vec<WireKeyPair>,
+    pub a_keys: Vec<WireKeyPair>,
+    pub b_keys: Vec<WireKeyPair>,
 }
 
 impl InputKeys {
@@ -150,8 +150,8 @@ impl InputKeys {
 #[derive(Clone, Debug)]
 pub struct InputKeysView {
     // For each participant's bit, we hold the key representing their choice bit.
-    a_keys: Vec<WireKey>,
-    b_keys: Vec<WireKey>,
+    pub a_keys: Vec<WireKey>,
+    pub b_keys: Vec<WireKey>,
 }
 
 impl InputKeysView {
@@ -283,7 +283,7 @@ impl EncryptedBit {
     fn decrypt(&self, key: &EncryptionKey) -> bool {
         let mut plaintext = [self.ciphertext];
         decrypt(&self.nonce, key, &mut plaintext);
-        plaintext[0] == 0
+        plaintext[0] == 1
     }
 }
 
@@ -440,4 +440,47 @@ pub fn evaluate(view: &InputKeysView, garbled: &GarbledCircuit, circuit: &Circui
     let mut ungarbler = UnGarbler::new(view, garbled);
     let output_key = ungarbler.ungarble(circuit);
     garbled.output.decrypt(&output_key)
+}
+
+#[cfg(test)]
+mod test {
+    use rand::rngs::OsRng;
+
+    use super::*;
+
+    fn run_evaluation(input_a: &[bool], input_b: &[bool], circuit: &Circuit) -> bool {
+        let (input_keys, garbled) = garble(&mut OsRng, circuit);
+        assert_eq!(input_a.len(), input_keys.a_keys.len());
+        assert_eq!(input_b.len(), input_keys.b_keys.len());
+        let mut a_keys = Vec::with_capacity(input_a.len());
+        for (choice, (key0, key1)) in input_a.iter().zip(input_keys.a_keys) {
+            if *choice {
+                a_keys.push(key1);
+            } else {
+                a_keys.push(key0);
+            }
+        }
+        let mut b_keys = Vec::with_capacity(input_b.len());
+        for (choice, (key0, key1)) in input_b.iter().zip(input_keys.b_keys) {
+            if *choice {
+                b_keys.push(key1);
+            } else {
+                b_keys.push(key0);
+            }
+        }
+        let view = InputKeysView { a_keys, b_keys };
+        evaluate(&view, &garbled, circuit)
+    }
+
+    #[test]
+    fn test_and_circuit_evaluation() {
+        use self::Input::*;
+        use Circuit::*;
+
+        let circuit = Gate(0b1000, Box::new(Input(A(0))), Box::new(Input(B(0))));
+        assert!(!run_evaluation(&[false], &[false], &circuit));
+        assert!(!run_evaluation(&[false], &[true], &circuit));
+        assert!(!run_evaluation(&[true], &[false], &circuit));
+        assert!(run_evaluation(&[true], &[true], &circuit));
+    }
 }
