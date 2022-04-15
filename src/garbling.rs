@@ -495,4 +495,19 @@ mod test {
         assert!(run_evaluation(&[true], &[false], &circuit));
         assert!(run_evaluation(&[true], &[true], &circuit));
     }
+
+    #[test]
+    fn test_nested_circuit_evaluation() {
+        use self::Input::*;
+        use Circuit::*;
+
+        let circuit = Gate(
+            0b1000,
+            Box::new(Gate(0b1001, Box::new(Input(A(0))), Box::new(Input(B(0))))),
+            Box::new(Gate(0b1001, Box::new(Input(A(1))), Box::new(Input(B(1))))),
+        );
+        assert!(!run_evaluation(&[false, true], &[false, false], &circuit));
+        assert!(run_evaluation(&[false, false], &[false, false], &circuit));
+        assert!(run_evaluation(&[true, true], &[true, true], &circuit));
+    }
 }
