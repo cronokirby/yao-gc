@@ -483,4 +483,16 @@ mod test {
         assert!(!run_evaluation(&[true], &[false], &circuit));
         assert!(run_evaluation(&[true], &[true], &circuit));
     }
+
+    #[test]
+    fn test_or_circuit_evaluation() {
+        use self::Input::*;
+        use Circuit::*;
+
+        let circuit = Gate(0b1110, Box::new(Input(A(0))), Box::new(Input(B(0))));
+        assert!(!run_evaluation(&[false], &[false], &circuit));
+        assert!(run_evaluation(&[false], &[true], &circuit));
+        assert!(run_evaluation(&[true], &[false], &circuit));
+        assert!(run_evaluation(&[true], &[true], &circuit));
+    }
 }
