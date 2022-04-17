@@ -57,6 +57,21 @@ pub struct WireKey {
     pub pointer: Choice,
 }
 
+impl Into<Vec<u8>> for WireKey {
+    fn into(self) -> Vec<u8> {
+        (&self).into()
+    }
+}
+
+impl<'a> Into<Vec<u8>> for &'a WireKey {
+    fn into(self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(ENCRYPTION_KEY_SIZE + 1);
+        out.extend_from_slice(&self.key);
+        out.extend_from_slice(&[self.pointer.unwrap_u8()]);
+        out
+    }
+}
+
 pub type WireKeyPair = (WireKey, WireKey);
 
 impl WireKey {
@@ -101,6 +116,17 @@ impl WireKey {
         let nonce = encrypt(rng, &key, &mut ciphertext);
 
         EncryptedKey { nonce, ciphertext }
+    }
+}
+
+impl ConditionallySelectable for WireKey {
+    fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
+        let mut key = [0; ENCRYPTION_KEY_SIZE];
+        for (i, key_i) in key.iter_mut().enumerate() {
+            *key_i = u8::conditional_select(&a.key[i], &b.key[i], choice);
+        }
+        let pointer = Choice::conditional_select(&a.pointer, &b.pointer, choice);
+        Self { key, pointer }
     }
 }
 

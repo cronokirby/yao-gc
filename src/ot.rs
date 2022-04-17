@@ -126,7 +126,7 @@ pub enum OTOutput {
 ///
 /// The sender's goal is to transmit one of two messages, without learning which.
 #[derive(Clone, Debug)]
-enum Sender {
+pub enum Sender {
     S0 {
         /// The first message the receiver might have.
         m0: Vec<u8>,
