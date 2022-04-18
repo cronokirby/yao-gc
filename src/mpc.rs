@@ -2,7 +2,7 @@ use rand::{CryptoRng, RngCore};
 use subtle::{Choice, ConditionallySelectable};
 
 use crate::circuit::Circuit;
-use crate::garbling::{garble, GarbledCircuit, WireKey, WireKeyPair, evaluate, InputKeysView};
+use crate::garbling::{evaluate, garble, GarbledCircuit, InputKeysView, WireKey, WireKeyPair};
 use crate::ot::{self, OTError};
 
 /// An error that can happen while running our MPC protocol.
@@ -12,6 +12,8 @@ pub enum MPCError {
     AlreadyFinished,
     /// We received an unexpected message
     UnexpectedMessage,
+    /// We failed to parse the result of an oblivious transfer as a WireKey
+    InvalidWireKey,
     /// We've received the wrong number of OT messages.
     IncorrectOTMessageCount(usize, usize),
     /// An error occurring from the underlying oblivious transfer.
@@ -40,6 +42,13 @@ pub enum Message {
 }
 
 impl Message {
+    fn ot_messages(self) -> Result<Vec<ot::Message>, MPCError> {
+        match self {
+            Self::OTMessages(m) => Ok(m),
+            _ => Err(MPCError::UnexpectedMessage),
+        }
+    }
+
     fn evaluation_request(self) -> Result<(), MPCError> {
         match self {
             Self::EvaluationRequest => Ok(()),
@@ -243,17 +252,59 @@ impl<'c> Evaluator<'c> {
         message: Message,
     ) -> Result<MPCOutput, MPCError> {
         let (new_self, res) = match std::mem::replace(self, Self::Done) {
+            Self::ObliviousTransfer {
+                circuit,
+                mut receivers,
+            } => {
+                let ot_messages = message.ot_messages()?;
+
+                let expected_len = receivers.len();
+                let actual_len = ot_messages.len();
+                if actual_len != expected_len {
+                    return Err(MPCError::IncorrectOTMessageCount(actual_len, expected_len));
+                }
+
+                // Our receivers will all either produce WireKeys, or produce
+                // further messages for the OT protocol. We collect both here.
+                let mut b_keys = Vec::with_capacity(actual_len);
+                let mut next_messages = Vec::with_capacity(actual_len);
+                for (receiver, message) in receivers.iter_mut().zip(ot_messages) {
+                    match receiver.advance(rng, message)? {
+                        ot::OTOutput::Message(m) => next_messages.push(m),
+                        ot::OTOutput::ReceiverOutput(r) => {
+                            let key =
+                                WireKey::try_from(&r[..]).map_err(|_| MPCError::InvalidWireKey)?;
+                            b_keys.push(key);
+                        }
+                        // Our receivers will never output this variant
+                        ot::OTOutput::SenderDone(_) => unreachable!(),
+                    }
+                }
+                // Our implementation of OT will always take the same number of steps,
+                // so we can assume that the results are either empty or full
+                if next_messages.len() == expected_len {
+                    (
+                        Self::ObliviousTransfer { circuit, receivers },
+                        MPCOutput::Message(Message::OTMessages(next_messages)),
+                    )
+                } else {
+                    assert_eq!(b_keys.len(), expected_len);
+                    (
+                        Self::RequestingEvaluation { b_keys, circuit },
+                        MPCOutput::Message(Message::EvaluationRequest),
+                    )
+                }
+            }
             Self::RequestingEvaluation { b_keys, circuit } => {
                 let (a_keys, garbled) = message.evaluation_response()?;
-                let inputs_keys_view = InputKeysView { a_keys, b_keys};
+                let inputs_keys_view = InputKeysView { a_keys, b_keys };
                 let result = evaluate(&inputs_keys_view, &garbled, circuit);
                 (
                     Self::Done,
-                    MPCOutput::EvaluatorDone(Message::EvaluationResult(result), result)
+                    MPCOutput::EvaluatorDone(Message::EvaluationResult(result), result),
                 )
             }
             Self::Done => return Err(MPCError::AlreadyFinished),
-            _ => todo!(),
         };
         *self = new_self;
         Ok(res)

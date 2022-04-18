@@ -72,6 +72,22 @@ impl<'a> Into<Vec<u8>> for &'a WireKey {
     }
 }
 
+impl TryFrom<&[u8]> for WireKey {
+    type Error = ();
+
+    fn try_from(value: &[u8]) -> Result<Self, ()> {
+        if value.len() != ENCRYPTION_KEY_SIZE + 1 {
+            return Err(());
+        }
+
+        let mut key = [0; ENCRYPTION_KEY_SIZE];
+        key.copy_from_slice(&value[..ENCRYPTION_KEY_SIZE]);
+        let pointer = Choice::from(value[ENCRYPTION_KEY_SIZE]);
+
+        Ok(Self { key, pointer })
+    }
+}
+
 pub type WireKeyPair = (WireKey, WireKey);
 
 impl WireKey {
