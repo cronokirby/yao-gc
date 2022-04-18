@@ -39,6 +39,15 @@ pub enum Message {
     EvaluationResult(bool),
 }
 
+impl Message {
+    fn evaluation_request(self) -> Result<(), MPCError> {
+        match self {
+            Self::EvaluationRequest => Ok(()),
+            _ => Err(MPCError::UnexpectedMessage),
+        }
+    }
+}
+
 /// The output return when advancing the state of one of the parties.
 #[derive(Clone, Debug)]
 pub enum MPCOutput {
@@ -171,6 +180,13 @@ impl Garbler {
                 }
                 _ => return Err(MPCError::UnexpectedMessage),
             },
+            Self::WaitForEvaluationStart { a_keys, garbled } => {
+                message.evaluation_request()?;
+                (
+                    Self::EvaluationWait,
+                    MPCOutput::Message(Message::EvaluationResponse(a_keys, garbled))
+                )
+            }
             _ => unimplemented!(),
         };
         *self = new_self;
