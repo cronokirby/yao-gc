@@ -12,6 +12,8 @@ pub enum MPCError {
     AlreadyFinished,
     /// We received an unexpected message
     UnexpectedMessage,
+    /// We've received the wrong number of OT messages.
+    IncorrectOTMessageCount(usize, usize),
     /// An error occurring from the underlying oblivious transfer.
     OTError(ot::OTError),
 }
@@ -57,6 +59,10 @@ enum Garbler {
         a_keys: Vec<WireKey>,
         garbled: GarbledCircuit,
         senders: Vec<ot::Sender>,
+    },
+    WaitForEvaluationStart {
+        a_keys: Vec<WireKey>,
+        garbled: GarbledCircuit,
     },
     EvaluationWait,
     Done,
@@ -112,9 +118,56 @@ impl Garbler {
                         .collect();
                     let messages = messages_result?;
                     (
-                        Self::ObliviousTransfer { a_keys, garbled, senders },
-                        MPCOutput::Message(Message::OTMessages(messages))
+                        Self::ObliviousTransfer {
+                            a_keys,
+                            garbled,
+                            senders,
+                        },
+                        MPCOutput::Message(Message::OTMessages(messages)),
                     )
+                }
+                Message::OTMessages(ot_messages) => {
+                    // Because we're receiving this message, we have no guarantee
+                    // that it has the right number of OT components.
+                    let expected_len = senders.len();
+                    let actual_len = ot_messages.len();
+                    if actual_len != expected_len {
+                        return Err(MPCError::IncorrectOTMessageCount(actual_len, expected_len));
+                    }
+
+                    let mut done_count = 0;
+                    let mut next_messages = Vec::with_capacity(senders.len());
+
+                    for (sender, message) in senders.iter_mut().zip(ot_messages) {
+                        match sender.advance(rng, message)? {
+                            ot::OTOutput::Message(m) => next_messages.push(m),
+                            ot::OTOutput::SenderDone(m) => {
+                                next_messages.push(m);
+                                done_count += 1
+                            }
+                            // The sender will never output this variant
+                            ot::OTOutput::ReceiverOutput(_) => unreachable!(),
+                        }
+                    }
+
+                    if done_count == 0 {
+                        (
+                            Self::ObliviousTransfer {
+                                a_keys,
+                                garbled,
+                                senders,
+                            },
+                            MPCOutput::Message(Message::OTMessages(next_messages)),
+                        )
+                    } else if done_count == senders.len() {
+                        (
+                            Self::WaitForEvaluationStart { a_keys, garbled },
+                            MPCOutput::Message(Message::OTMessages(next_messages)),
+                        )
+                    } else {
+                        // All of the OT senders will finish at the same time
+                        unreachable!()
+                    }
                 }
                 _ => return Err(MPCError::UnexpectedMessage),
             },
