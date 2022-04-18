@@ -1,6 +1,8 @@
 use chacha20::{cipher::KeyIvInit, cipher::StreamCipher, XChaCha8};
 use rand::{CryptoRng, RngCore};
+use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConditionallySelectable};
+use serde_big_array::BigArray;
 
 use crate::circuit::{Circuit, Input};
 
@@ -207,11 +209,12 @@ impl InputKeysView {
 }
 
 /// Represents an encrypted WireKey.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 struct EncryptedKey {
     /// The nonce used to encrypt the ciphertext.
     nonce: Nonce,
     /// The ciphertext includes the half key, and the pointer bit as a full byte.
+    #[serde(with = "BigArray")]
     ciphertext: [u8; ENCRYPTION_KEY_SIZE + 1],
 }
 
@@ -249,7 +252,7 @@ impl EncryptedKey {
 }
 
 /// Represents an encrypted table holding the next encrypted key.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 struct EncryptedKeyTable {
     table: [EncryptedKey; 4],
 }
@@ -298,7 +301,7 @@ impl EncryptedKeyTable {
 }
 
 /// Represents the encryption of a single bit.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 struct EncryptedBit {
     /// The nonce used to encrypt this byte.
     nonce: Nonce,
@@ -341,7 +344,7 @@ impl ConditionallySelectable for EncryptedBit {
 }
 
 /// Represents a table with the encrypted output of the circuit.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 struct EncryptedOutput {
     /// One entry for each of the possible output bits.
     entries: [EncryptedBit; 2],
@@ -375,7 +378,7 @@ impl EncryptedOutput {
 /// This can be seen as an encrypted version of the circuit we want to evaluate.
 /// Given the correct keys for each input to the circuit, we can evaluate the
 /// final result.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GarbledCircuit {
     /// The tables for each gate composing the circuit.
     ///

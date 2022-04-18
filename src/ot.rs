@@ -11,6 +11,7 @@ use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
 use rand::{CryptoRng, RngCore};
 use subtle::{Choice, ConditionallySelectable};
+use serde::{Serialize, Deserialize};
 
 const DERIVE_KEY_FROM_POINT_CONTEXT: &'static str = "Yao-GC Derive Key From Point 2022-04-03";
 
@@ -42,24 +43,24 @@ pub enum OTError {
     UnexpectedMessageType(Option<u8>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct Message0 {
     point: RistrettoPoint,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct Message1 {
     point: RistrettoPoint,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct Message2 {
     c0: Vec<u8>,
     c1: Vec<u8>,
 }
 
 /// Represents a message that can be sent during the oblivious transfer protocol.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Message {
     Start,
     /// The first message, sent from the sender to the receiver.

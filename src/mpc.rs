@@ -1,4 +1,5 @@
 use rand::{CryptoRng, RngCore};
+use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConditionallySelectable};
 
 use crate::circuit::Circuit;
@@ -27,7 +28,7 @@ impl From<ot::OTError> for MPCError {
 }
 
 /// Represents some kind of message that can be sent during the MPC protocol.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Message {
     /// The first message to initiate the garbler.
     Start,
@@ -36,7 +37,7 @@ pub enum Message {
     /// The evaluator requests to evaluate the circuit
     EvaluationRequest,
     /// The garbler sends over the circuit to evaluate.
-    EvaluationResponse(Vec<WireKey>, GarbledCircuit),
+    EvaluationResponse(Vec<Vec<u8>>, GarbledCircuit),
     /// The evaluator returns the result of the evaluation
     EvaluationResult(bool),
 }
@@ -58,7 +59,13 @@ impl Message {
 
     fn evaluation_response(self) -> Result<(Vec<WireKey>, GarbledCircuit), MPCError> {
         match self {
-            Self::EvaluationResponse(keys, garbled) => Ok((keys, garbled)),
+            Self::EvaluationResponse(keys, garbled) => {
+                let mut out = Vec::with_capacity(keys.len());
+                for key in &keys {
+                    out.push(WireKey::try_from(&key[..]).map_err(|_| MPCError::InvalidWireKey)?);
+                }
+                Ok((out, garbled))
+            }
             _ => Err(MPCError::UnexpectedMessage),
         }
     }
@@ -204,10 +211,12 @@ impl Garbler {
                 _ => return Err(MPCError::UnexpectedMessage),
             },
             Self::WaitForEvaluationStart { a_keys, garbled } => {
+                let mut out = a_keys.into_iter().map(|x| x.into()).collect();
+
                 message.evaluation_request()?;
                 (
                     Self::EvaluationWait,
-                    MPCOutput::Message(Message::EvaluationResponse(a_keys, garbled)),
+                    MPCOutput::Message(Message::EvaluationResponse(out, garbled)),
                 )
             }
             Self::EvaluationWait => {
