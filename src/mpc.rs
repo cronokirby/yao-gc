@@ -93,7 +93,7 @@ pub enum MPCOutput {
 ///
 /// The Garbler creates the garbled circuit and sends it to the evaluator.
 #[derive(Clone, Debug)]
-enum Garbler {
+pub enum Garbler {
     ObliviousTransfer {
         a_keys: Vec<WireKey>,
         garbled: GarbledCircuit,
@@ -234,7 +234,7 @@ impl Garbler {
 ///
 /// They're responsible for evaluating the circuit with the input keys.
 #[derive(Clone, Debug)]
-enum Evaluator<'c> {
+pub enum Evaluator<'c> {
     ObliviousTransfer {
         circuit: &'c Circuit,
         receivers: Vec<ot::Receiver>,

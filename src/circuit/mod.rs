@@ -81,7 +81,7 @@ fn optimize(ast: ast::AST) -> Circuit {
     use ast::AST::*;
 
     match ast {
-        Input(_) => todo!(),
+        Input(i) => Circuit::Input(i),
         // We know it's a not gate
         Gate1(Not, a) => {
             let mut circuit = optimize(*a);
