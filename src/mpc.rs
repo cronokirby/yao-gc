@@ -2,7 +2,7 @@ use rand::{CryptoRng, RngCore};
 use subtle::{Choice, ConditionallySelectable};
 
 use crate::circuit::Circuit;
-use crate::garbling::{evaluate, garble, GarbledCircuit, InputKeysView, WireKey, WireKeyPair};
+use crate::garbling::{evaluate, garble, GarbledCircuit, InputKeysView, WireKey};
 use crate::ot::{self, OTError};
 
 /// An error that can happen while running our MPC protocol.
@@ -308,5 +308,73 @@ impl<'c> Evaluator<'c> {
         };
         *self = new_self;
         Ok(res)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use rand::rngs::OsRng;
+
+    use super::*;
+
+    fn execute_protocol(
+        a_inputs: &[bool],
+        b_inputs: &[bool],
+        circuit: &Circuit,
+    ) -> Result<bool, MPCError> {
+        fn bools_to_choices(inputs: &[bool]) -> Vec<Choice> {
+            let mut out = Vec::with_capacity(inputs.len());
+            for input in inputs {
+                out.push(Choice::from(u8::from(*input)));
+            }
+            out
+        }
+
+        let a_choices = bools_to_choices(a_inputs);
+        let b_choices = bools_to_choices(b_inputs);
+
+        let rng = &mut OsRng;
+
+        let mut garbler = Garbler::create(rng, &a_choices, circuit);
+        let mut evaluator = Evaluator::create(&b_choices, circuit);
+
+        let mut message = Message::Start;
+        let mut is_garbler = true;
+        loop {
+            if is_garbler {
+                message = match garbler.advance(rng, message)? {
+                    MPCOutput::Message(m) => m,
+                    MPCOutput::GarblerDone(result) => return Ok(result),
+                    MPCOutput::EvaluatorDone(_, _) => unreachable!(),
+                }
+            } else {
+                message = match evaluator.advance(rng, message)? {
+                    MPCOutput::Message(m) => m,
+                    MPCOutput::GarblerDone(_) => unreachable!(),
+                    MPCOutput::EvaluatorDone(m, _) => m,
+                }
+            }
+            is_garbler = !is_garbler;
+        }
+    }
+
+    #[test]
+    fn test_mpc_evaluation() {
+        use crate::circuit::{Circuit::*, Input::*};
+
+        let circuit = Gate(
+            0b1000,
+            Box::new(Gate(0b1001, Box::new(Input(A(0))), Box::new(Input(B(0))))),
+            Box::new(Gate(0b1001, Box::new(Input(A(1))), Box::new(Input(B(1))))),
+        );
+
+        assert_eq!(
+            execute_protocol(&[false, false], &[false, true], &circuit),
+            Ok(false)
+        );
+        assert_eq!(
+            execute_protocol(&[false, false], &[false, false], &circuit),
+            Ok(true)
+        );
     }
 }
