@@ -2,7 +2,7 @@ use rand::{CryptoRng, RngCore};
 use subtle::{Choice, ConditionallySelectable};
 
 use crate::circuit::Circuit;
-use crate::garbling::{garble, GarbledCircuit, WireKey, WireKeyPair};
+use crate::garbling::{garble, GarbledCircuit, WireKey, WireKeyPair, evaluate, InputKeysView};
 use crate::ot::{self, OTError};
 
 /// An error that can happen while running our MPC protocol.
@@ -43,6 +43,13 @@ impl Message {
     fn evaluation_request(self) -> Result<(), MPCError> {
         match self {
             Self::EvaluationRequest => Ok(()),
+            _ => Err(MPCError::UnexpectedMessage),
+        }
+    }
+
+    fn evaluation_response(self) -> Result<(Vec<WireKey>, GarbledCircuit), MPCError> {
+        match self {
+            Self::EvaluationResponse(keys, garbled) => Ok((keys, garbled)),
             _ => Err(MPCError::UnexpectedMessage),
         }
     }
@@ -228,5 +235,27 @@ impl<'c> Evaluator<'c> {
             .map(|choice| ot::Receiver::new(*choice))
             .collect();
         Self::ObliviousTransfer { circuit, receivers }
+    }
+
+    pub fn advance<R: CryptoRng + RngCore>(
+        &mut self,
+        rng: &mut R,
+        message: Message,
+    ) -> Result<MPCOutput, MPCError> {
+        let (new_self, res) = match std::mem::replace(self, Self::Done) {
+            Self::RequestingEvaluation { b_keys, circuit } => {
+                let (a_keys, garbled) = message.evaluation_response()?;
+                let inputs_keys_view = InputKeysView { a_keys, b_keys};
+                let result = evaluate(&inputs_keys_view, &garbled, circuit);
+                (
+                    Self::Done,
+                    MPCOutput::EvaluatorDone(Message::EvaluationResult(result), result)
+                )
+            }
+            Self::Done => return Err(MPCError::AlreadyFinished),
+            _ => todo!(),
+        };
+        *self = new_self;
+        Ok(res)
     }
 }
