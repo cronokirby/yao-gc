@@ -1,5 +1,7 @@
 # yao-gc
 
+![](./cover.png)
+
 This is a rudimentary implementation of [Yao's Garbled Circuits](https://www.wikiwand.com/en/Garbled_circuit). This is a technique which allows two
 parties to evaluate a boolean function on their private inputs, without
 revealing those inputs to eachother.
