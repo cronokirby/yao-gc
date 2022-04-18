@@ -29,8 +29,10 @@ pub enum Message {
     Start,
     /// We're sending messages associated with all of our OT instances.
     OTMessages(Vec<ot::Message>),
+    /// The evaluator requests to evaluate the circuit
+    EvaluationRequest,
     /// The garbler sends over the circuit to evaluate.
-    EvaluationRequest(GarbledCircuit),
+    EvaluationResponse(Vec<WireKey>, GarbledCircuit),
     /// The evaluator returns the result of the evaluation
     EvaluationResult(bool),
 }
