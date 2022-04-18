@@ -209,4 +209,24 @@ impl Garbler {
 ///
 /// They're responsible for evaluating the circuit with the input keys.
 #[derive(Clone, Debug)]
-struct Evaluator {}
+enum Evaluator<'c> {
+    ObliviousTransfer {
+        circuit: &'c Circuit,
+        receivers: Vec<ot::Receiver>,
+    },
+    RequestingEvaluation {
+        b_keys: Vec<WireKey>,
+        circuit: &'c Circuit,
+    },
+    Done,
+}
+
+impl<'c> Evaluator<'c> {
+    pub fn create(inputs: &[Choice], circuit: &'c Circuit) -> Self {
+        let receivers = inputs
+            .iter()
+            .map(|choice| ot::Receiver::new(*choice))
+            .collect();
+        Self::ObliviousTransfer { circuit, receivers }
+    }
+}
