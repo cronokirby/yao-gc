@@ -1,6 +1,8 @@
 # yao-gc
 
-![](./cover.png)
+<p align="center">
+    <img src="./cover.png" width="30%">
+</p>
 
 This is a rudimentary implementation of [Yao's Garbled Circuits](https://www.wikiwand.com/en/Garbled_circuit). This is a technique which allows two
 parties to evaluate a boolean function on their private inputs, without
