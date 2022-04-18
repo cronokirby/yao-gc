@@ -59,17 +59,17 @@ pub struct WireKey {
     pub pointer: Choice,
 }
 
-impl Into<Vec<u8>> for WireKey {
-    fn into(self) -> Vec<u8> {
-        (&self).into()
+impl From<WireKey> for Vec<u8> {
+    fn from(val: WireKey) -> Self {
+        (&val).into()
     }
 }
 
-impl<'a> Into<Vec<u8>> for &'a WireKey {
-    fn into(self) -> Vec<u8> {
+impl<'a> From<&'a WireKey> for Vec<u8> {
+    fn from(val: &'a WireKey) -> Self {
         let mut out = Vec::with_capacity(ENCRYPTION_KEY_SIZE + 1);
-        out.extend_from_slice(&self.key);
-        out.extend_from_slice(&[self.pointer.unwrap_u8()]);
+        out.extend_from_slice(&val.key);
+        out.extend_from_slice(&[val.pointer.unwrap_u8()]);
         out
     }
 }
@@ -239,7 +239,7 @@ impl EncryptedKey {
             key[i] = a_i ^ b_i;
         }
 
-        let mut plaintext = self.ciphertext.clone();
+        let mut plaintext = self.ciphertext;
         decrypt(&self.nonce, &key, &mut plaintext);
 
         let mut key = [0u8; ENCRYPTION_KEY_SIZE];

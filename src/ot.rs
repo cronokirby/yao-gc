@@ -13,7 +13,7 @@ use rand::{CryptoRng, RngCore};
 use subtle::{Choice, ConditionallySelectable};
 use serde::{Serialize, Deserialize};
 
-const DERIVE_KEY_FROM_POINT_CONTEXT: &'static str = "Yao-GC Derive Key From Point 2022-04-03";
+const DERIVE_KEY_FROM_POINT_CONTEXT: &str = "Yao-GC Derive Key From Point 2022-04-03";
 
 /// Derive a key from a point.
 fn kdf(point: &RistrettoPoint) -> [u8; 32] {
@@ -44,17 +44,17 @@ pub enum OTError {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct Message0 {
+pub struct Message0 {
     point: RistrettoPoint,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct Message1 {
+pub struct Message1 {
     point: RistrettoPoint,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct Message2 {
+pub struct Message2 {
     c0: Vec<u8>,
     c1: Vec<u8>,
 }
@@ -74,14 +74,6 @@ pub enum Message {
 }
 
 impl Message {
-    fn start(self) -> Result<(), OTError> {
-        match self {
-            Message::Start => Ok(()),
-            Message::M0(_) => Err(OTError::UnexpectedMessageType(Some(0))),
-            Message::M1(_) => Err(OTError::UnexpectedMessageType(Some(1))),
-            Message::M2(_) => Err(OTError::UnexpectedMessageType(Some(2))),
-        }
-    }
     fn message0(self) -> Result<Message0, OTError> {
         match self {
             Message::Start => Err(OTError::UnexpectedMessageType(None)),

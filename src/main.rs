@@ -27,41 +27,41 @@ struct Args {
 /// Represents the kind of error that can happen in our application
 #[derive(Debug)]
 enum AppError {
-    InputError(usize, usize),
-    CompileError(circuit::CompileError),
-    EncodeError(encode::Error),
-    DecodeError(decode::Error),
-    MPCError(mpc::MPCError),
-    IOError(io::Error),
+    Input(usize, usize),
+    Compile(circuit::CompileError),
+    Encode(encode::Error),
+    Decode(decode::Error),
+    Mpc(mpc::MPCError),
+    IO(io::Error),
 }
 
 impl From<circuit::CompileError> for AppError {
     fn from(e: circuit::CompileError) -> Self {
-        Self::CompileError(e)
+        Self::Compile(e)
     }
 }
 
 impl From<encode::Error> for AppError {
     fn from(e: encode::Error) -> Self {
-        Self::EncodeError(e)
+        Self::Encode(e)
     }
 }
 
 impl From<decode::Error> for AppError {
     fn from(e: decode::Error) -> Self {
-        Self::DecodeError(e)
+        Self::Decode(e)
     }
 }
 
 impl From<mpc::MPCError> for AppError {
     fn from(e: mpc::MPCError) -> Self {
-        Self::MPCError(e)
+        Self::Mpc(e)
     }
 }
 
 impl From<io::Error> for AppError {
     fn from(e: io::Error) -> Self {
-        Self::IOError(e)
+        Self::IO(e)
     }
 }
 
@@ -103,7 +103,7 @@ fn read_inputs(required: usize) -> Result<Vec<Choice>, AppError> {
     io::stdin().read_line(&mut line)?;
     let content = line.trim();
     if content.len() != required {
-        return Err(AppError::InputError(content.len(), required));
+        return Err(AppError::Input(content.len(), required));
     }
     let mut out = Vec::with_capacity(required);
     for c in content.bytes() {

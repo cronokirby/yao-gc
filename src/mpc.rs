@@ -211,7 +211,7 @@ impl Garbler {
                 _ => return Err(MPCError::UnexpectedMessage),
             },
             Self::WaitForEvaluationStart { a_keys, garbled } => {
-                let mut out = a_keys.into_iter().map(|x| x.into()).collect();
+                let out = a_keys.into_iter().map(|x| x.into()).collect();
 
                 message.evaluation_request()?;
                 (
