@@ -46,6 +46,13 @@ impl Message {
             _ => Err(MPCError::UnexpectedMessage),
         }
     }
+
+    fn evaluation_result(self) -> Result<bool, MPCError> {
+        match self {
+            Self::EvaluationResult(b) => Ok(b),
+            _ => Err(MPCError::UnexpectedMessage),
+        }
+    }
 }
 
 /// The output return when advancing the state of one of the parties.
@@ -184,10 +191,14 @@ impl Garbler {
                 message.evaluation_request()?;
                 (
                     Self::EvaluationWait,
-                    MPCOutput::Message(Message::EvaluationResponse(a_keys, garbled))
+                    MPCOutput::Message(Message::EvaluationResponse(a_keys, garbled)),
                 )
             }
-            _ => unimplemented!(),
+            Self::EvaluationWait => {
+                let result = message.evaluation_result()?;
+                (Self::Done, MPCOutput::GarblerDone(result))
+            }
+            Self::Done => return Err(MPCError::AlreadyFinished),
         };
         *self = new_self;
         Ok(res)
